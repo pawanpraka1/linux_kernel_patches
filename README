@@ -1,0 +1,5 @@
+get the latest linux kernel from following location :-
+
+git clone git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+
+and appply the patches and have fun.
