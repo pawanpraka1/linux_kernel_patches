@@ -1,0 +1,174 @@
+From 2776692f7c713b50b2c6ebf7814ee1ae6026d837 Mon Sep 17 00:00:00 2001
+From: Pawan <pawanprakash101@gmail.com>
+Date: Sat, 27 Sep 2014 23:26:05 +0530
+Subject: [PATCH] adding a system call to get the physical address of a
+ virtual address.using this we can verify that kernel does
+ not allocate the physical page until we use it.
+
+example program :-
+
+char a[SIZE];
+
+int main()
+{
+	printf("before %x\n", syscall(453, &a[PAGE_SIZE]));
+
+	a[PAGE_SIZE] = 0;
+
+	printf("before %x\n", syscall(453, &a[PAGE_SIZE]));
+}
+---
+ Makefile                         |    2 +-
+ arch/x86/syscalls/syscall_32.tbl |    1 +
+ arch/x86/syscalls/syscall_64.tbl |    2 +-
+ include/linux/syscalls.h         |    2 +
+ mysyscall/Makefile               |    1 +
+ mysyscall/mysyscall.c            |   82 ++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 88 insertions(+), 2 deletions(-)
+ create mode 100644 mysyscall/Makefile
+ create mode 100644 mysyscall/mysyscall.c
+
+diff --git a/Makefile b/Makefile
+index c10b734..5b6e25b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -531,7 +531,7 @@ init-y		:= init/
+ drivers-y	:= drivers/ sound/ firmware/
+ net-y		:= net/
+ libs-y		:= lib/
+-core-y		:= usr/
++core-y		:= usr/ mysyscall/ 
+ endif # KBUILD_EXTMOD
+ 
+ ifeq ($(dot-config),1)
+diff --git a/arch/x86/syscalls/syscall_32.tbl b/arch/x86/syscalls/syscall_32.tbl
+index 96bc506..88b91c5 100644
+--- a/arch/x86/syscalls/syscall_32.tbl
++++ b/arch/x86/syscalls/syscall_32.tbl
+@@ -359,3 +359,4 @@
+ 350	i386	finit_module		sys_finit_module
+ 351	i386	sched_setattr		sys_sched_setattr
+ 352	i386	sched_getattr		sys_sched_getattr
++453     i386    sys_opsyscall           sys_opsyscall
+diff --git a/arch/x86/syscalls/syscall_64.tbl b/arch/x86/syscalls/syscall_64.tbl
+index a12bddc..d0ac298 100644
+--- a/arch/x86/syscalls/syscall_64.tbl
++++ b/arch/x86/syscalls/syscall_64.tbl
+@@ -322,7 +322,7 @@
+ 313	common	finit_module		sys_finit_module
+ 314	common	sched_setattr		sys_sched_setattr
+ 315	common	sched_getattr		sys_sched_getattr
+-
++453     i386    sys_opsyscall           sys_opsyscall
+ #
+ # x32-specific system call numbers start at 512 to avoid cache impact
+ # for native 64-bit operation.
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index a747a77..8e751e0 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -855,4 +855,6 @@ asmlinkage long sys_process_vm_writev(pid_t pid,
+ asmlinkage long sys_kcmp(pid_t pid1, pid_t pid2, int type,
+ 			 unsigned long idx1, unsigned long idx2);
+ asmlinkage long sys_finit_module(int fd, const char __user *uargs, int flags);
++
++asmlinkage long sys_opsyscall(unsigned long ptr);
+ #endif
+diff --git a/mysyscall/Makefile b/mysyscall/Makefile
+new file mode 100644
+index 0000000..4fc92e4
+--- /dev/null
++++ b/mysyscall/Makefile
+@@ -0,0 +1 @@
++obj-y := mysyscall.o
+diff --git a/mysyscall/mysyscall.c b/mysyscall/mysyscall.c
+new file mode 100644
+index 0000000..6445728
+--- /dev/null
++++ b/mysyscall/mysyscall.c
+@@ -0,0 +1,82 @@
++#include<linux/kernel.h>
++#include<linux/syscalls.h>
++#include<linux/mm.h>
++#include<linux/gfp.h>
++#include<linux/mm_types.h>
++#include<linux/highmem.h>
++
++int pawan_pte_entry(pte_t *pte, unsigned long addr, unsigned long next, struct mm_walk *walk)
++{
++	if (sizeof(pteval_t) > sizeof(long))
++		printk(KERN_ALERT "pte %llx addr %lx\n", native_pte_val(*pte), addr);
++	else
++		printk(KERN_ALERT "pte %lx addr %lx\n", native_pte_val(*pte), addr);
++	return 0;
++}
++
++int pawan_pgd_entry(pgd_t *pgd, unsigned long addr, unsigned long next, struct mm_walk *walk)
++{
++	if (sizeof(pgdval_t) > sizeof(long))
++		printk(KERN_ALERT "pgd %llx addr %lx\n", native_pgd_val(*pgd), addr);
++	else
++		printk(KERN_ALERT "pgd %lx addr %lx\n", native_pgd_val(*pgd), addr);
++	return 0;
++}
++int pawan_pud_entry(pud_t *pud, unsigned long addr, unsigned long next, struct mm_walk *walk)
++{
++	if (sizeof(pudval_t) > sizeof(long))
++		printk(KERN_ALERT "pud %llx addr %x\n", native_pud_val(*pud), (unsigned int)addr);
++	else
++		printk(KERN_ALERT "pud %lx addr %x\n", native_pud_val(*pud), (unsigned int)addr);
++       return 0;
++}
++
++int pawan_pmd_entry(pmd_t *pmd, unsigned long addr, unsigned long next, struct mm_walk *walk)
++{
++	if (sizeof(pmdval_t) > sizeof(long))
++       		printk(KERN_ALERT "pmd %llx addr %x\n", native_pmd_val(*pmd), (unsigned int)addr);
++       else
++       		printk(KERN_ALERT "pmd %lx addr %x\n", native_pmd_val(*pmd), (unsigned int)addr);
++       return 0;
++}
++
++long page_information(struct vm_area_struct *vma, unsigned long vaddr)
++{
++	pgd_t *pgdp;
++	pmd_t *pmdp;
++	pud_t *pudp;
++	pte_t *ptep;
++	pgdp = pgd_offset(vma->vm_mm, vaddr);
++	if (unlikely(pgd_none(*pgdp)))
++		return -1;
++	pawan_pgd_entry(pgdp, vaddr, 0 , NULL);
++	pudp = pud_offset(pgdp, vaddr);
++	if (unlikely(pud_none(*pudp)))
++		return -1;
++	pawan_pud_entry(pudp, vaddr, 0 , NULL);
++	pmdp = pmd_offset(pudp, vaddr);
++	if (unlikely(pmd_none(*pmdp)))
++		return -1;
++	pawan_pmd_entry(pmdp, vaddr, 0 , NULL);
++	ptep = pte_offset_map(pmdp, vaddr);
++	pawan_pte_entry(ptep, vaddr, 0 , NULL);
++	pte_unmap(ptep);
++	return ptep->pte;
++}
++
++/*453*/
++asmlinkage long sys_opsyscall(unsigned long ptr)
++{
++	struct mm_struct *mm = current->mm;
++	if(!mm)
++		return -EINVAL;
++	printk("page table lavel %d\n", PAGETABLE_LEVELS);
++	down_read(&mm->mmap_sem);
++	struct vm_area_struct *vma = find_vma(mm, ptr);
++	unsigned long pte = -1;
++	if(vma && (vma->vm_start <= ptr))
++		pte = page_information(vma, ptr);
++	up_read(&mm->mmap_sem);
++	return pte;
++}
++
+-- 
+1.7.9.5
+
