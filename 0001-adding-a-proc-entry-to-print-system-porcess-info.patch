@@ -1,0 +1,94 @@
+From b8233cb97174e9b39e86e45a81e7db8a6e2aa9d5 Mon Sep 17 00:00:00 2001
+From: Pawan <pawanprakash101@gmail.com>
+Date: Sun, 28 Sep 2014 00:49:52 +0530
+Subject: [PATCH] adding a proc entry to print system porcess info
+
+e.g.
+
+cat /proc/pawan
+
+pawan:-
+ctxt 151378
+processes 3082
+procs_running 1
+procs_blocked
+---
+ Makefile                    |    2 +-
+ mymodules/Makefile          |    1 +
+ mymodules/running_process.c |   43 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 45 insertions(+), 1 deletion(-)
+ create mode 100644 mymodules/Makefile
+ create mode 100644 mymodules/running_process.c
+
+diff --git a/Makefile b/Makefile
+index 5b6e25b..858f5ec 100644
+--- a/Makefile
++++ b/Makefile
+@@ -531,7 +531,7 @@ init-y		:= init/
+ drivers-y	:= drivers/ sound/ firmware/
+ net-y		:= net/
+ libs-y		:= lib/
+-core-y		:= usr/ mysyscall/ 
++core-y		:= usr/ mysyscall/ mymodules/
+ endif # KBUILD_EXTMOD
+ 
+ ifeq ($(dot-config),1)
+diff --git a/mymodules/Makefile b/mymodules/Makefile
+new file mode 100644
+index 0000000..8904086
+--- /dev/null
++++ b/mymodules/Makefile
+@@ -0,0 +1 @@
++obj-y = running_process.o
+diff --git a/mymodules/running_process.c b/mymodules/running_process.c
+new file mode 100644
+index 0000000..334bf7b
+--- /dev/null
++++ b/mymodules/running_process.c
+@@ -0,0 +1,43 @@
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/kernel_stat.h>
++#include <linux/module.h>
++
++static int show_stat(struct seq_file *p, void *v)
++{
++
++	seq_printf(p,
++		"\npawan:-\nctxt %llu\n"
++		"processes %lu\n"
++		"procs_running %lu\n"
++		"procs_blocked %lu\n",
++		nr_context_switches(),
++		total_forks,
++		nr_running(),
++		nr_iowait());
++
++	seq_putc(p, '\n');
++
++	return 0;
++}
++
++static int stat_open(struct inode *inode, struct file *file)
++{
++	int res = single_open(file, show_stat, NULL);
++	return res;
++}
++
++static const struct file_operations proc_stat_operations = {
++	.open		= stat_open,
++	.read		= seq_read,
++	.llseek		= seq_lseek,
++	.release	= single_release,
++};
++
++static int __init proc_running_stat(void)
++{
++	proc_create("pawan", 0, NULL, &proc_stat_operations);
++	return 0;
++}
++module_init(proc_running_stat);
++MODULE_AUTHOR("Pawan Prakash Sharma");
+-- 
+1.7.9.5
+
