@@ -1,0 +1,30 @@
+From e001ca62ce3a0742372ca8a54a1f13b1277a93c2 Mon Sep 17 00:00:00 2001
+From: Pawan <pawanprakash101@gmail.com>
+Date: Sun, 28 Sep 2014 17:58:30 +0530
+Subject: [PATCH] include last_arrival and last_queued time in schedule stats
+
+---
+ fs/proc/base.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/fs/proc/base.c b/fs/proc/base.c
+index b976062..be42a0d 100644
+--- a/fs/proc/base.c
++++ b/fs/proc/base.c
+@@ -338,10 +338,11 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
+  */
+ static int proc_pid_schedstat(struct task_struct *task, char *buffer)
+ {
+-	return sprintf(buffer, "%llu %llu %lu\n",
++	return sprintf(buffer, "%llu %llu %lu %llu %llu\n",
+ 			(unsigned long long)task->se.sum_exec_runtime,
+ 			(unsigned long long)task->sched_info.run_delay,
+-			task->sched_info.pcount);
++			task->sched_info.pcount, task->sched_info.last_arrival,
++			task->sched_info.last_queued);
+ }
+ #endif
+ 
+-- 
+1.7.9.5
+
